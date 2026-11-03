@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     provider: str            # gemini | fake
+    chatbot_name: str        # persona name (default: Lisa)
     chat_model: str
     embedding_model: str     # Pinecone hosted embedding model
     embedding_provider: str  # always "pinecone"
@@ -84,6 +85,7 @@ class ChatResponse(BaseModel):
     sources: list[Source]
     provider: str
     model: str
+    chatbot_name: str = "Lisa"
 
 
 # ---------------------------------------------------------------- errors

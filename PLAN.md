@@ -32,6 +32,7 @@ Frontend is out of scope (user will build it later). Backend lives in `backend/`
 | Chat history | Stateless; client sends optional `history` array | No server-side session state, frontend owns state |
 | API prefix | `/api` | Clean frontend integration |
 | Provider switch | `PROVIDER=gemini\|fake` | `fake` = offline tests/smoke checks only |
+| Assistant persona | **Lisa**, female AI chatbot; `CHATBOT_NAME` override | Prompt-level identity + small-talk handling; never claims to be human |
 | Containerization | Single `backend` service in `compose.yaml` | Gemini + Pinecone are external managed services; no local model/DB containers |
 | Backend image | python:3.14-slim, non-root user, `/data` volume | Wheels only, no compilers; secrets never in image |
 
@@ -96,7 +97,7 @@ compose.yaml             # backend service only
 
 ## Verification summary
 
-- `pytest` — 36/36 green, fully offline (fake LLM + in-memory fake Pinecone).
+- `pytest` — 38/38 green, fully offline (fake LLM + in-memory fake Pinecone).
 - `docker compose config` — valid.
 - Container smoke test — boots healthy; health reports the Gemini/Pinecone
   configuration; a misconfigured upload returns a clear `503` with the missing

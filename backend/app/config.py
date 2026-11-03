@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     #           still needs a Pinecone index unless the client is mocked)
     provider: Literal["gemini", "fake"] = "gemini"
 
+    # --- Assistant persona ----------------------------------------------------
+    chatbot_name: str = Field(
+        default="Lisa", validation_alias=AliasChoices("CHATBOT_NAME", "BOT_NAME")
+    )
+
     # --- Google Gemini (LLM) ------------------------------------------------
     google_api_key: str | None = Field(
         default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "GEMINI_API_KEY")
@@ -99,6 +104,10 @@ class Settings(BaseSettings):
     @property
     def chat_model(self) -> str:
         return "fake-echo" if self.provider == "fake" else self.google_chat_model
+
+    @property
+    def chatbot_display_name(self) -> str:
+        return (self.chatbot_name or "").strip() or "Lisa"
 
     @property
     def embedding_model(self) -> str:

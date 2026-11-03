@@ -26,6 +26,9 @@ services:
     environment:
       PROVIDER: ${PROVIDER:-gemini}
 
+      # --- Assistant persona ---
+      CHATBOT_NAME: ${CHATBOT_NAME:-Lisa}
+
       # --- Google Gemini (LLM) ---
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

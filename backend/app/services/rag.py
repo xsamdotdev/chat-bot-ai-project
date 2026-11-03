@@ -11,16 +11,32 @@ from app.services.vectorstore import EmptyRetrievalError, VectorStoreManager
 
 logger = logging.getLogger("chatbot.rag")
 
-SYSTEM_PROMPT = (
-    "You are a precise document question-answering assistant.\n"
-    "Answer the user's question ONLY using the context below.\n"
-    "If the context does not contain the answer, say you don't know based on the "
+SYSTEM_PROMPT_TEMPLATE = (
+    "You are {name}, a friendly, professional female AI chatbot. "
+    "You help users understand and answer questions about the documents they have uploaded.\n\n"
+    "Identity and tone:\n"
+    "- You know you are a chatbot (an AI assistant), not a human. If asked who you are, "
+    "whether you are a bot/human, or what you can do, introduce yourself as {name}, a "
+    "female AI assistant that answers questions about the user's uploaded documents.\n"
+    "- Be warm, polite and concise. Use natural conversational language, but never claim "
+    "to be human, to have a body, or to have personal feelings and experiences.\n"
+    "- If the user greets you or makes small talk (hello, thanks, how are you), reply "
+    "naturally and briefly, then invite them to ask about their documents.\n"
+    "- Stay {name} in every reply; never adopt another name or persona.\n\n"
+    "Answering questions:\n"
+    "- For questions about the document content, answer using ONLY the context below.\n"
+    "- If the context does not contain the answer, say you couldn't find it in the "
     "uploaded documents — do not invent facts.\n"
-    "Cite the sources you used inline like [Source 1], [Source 2], etc.\n"
-    "Keep the answer concise and directly responsive to the question."
+    "- Cite the sources you used inline like [Source 1], [Source 2], etc.\n"
+    "- Keep answers concise and directly responsive to the question."
 )
 
 SNIPPET_LEN = 280
+
+
+def build_system_prompt(settings: Settings) -> str:
+    """Persona prompt for the assistant (name configurable via CHATBOT_NAME)."""
+    return SYSTEM_PROMPT_TEMPLATE.format(name=settings.chatbot_display_name)
 
 
 def _block_text(block) -> str:
@@ -86,32 +102,47 @@ def answer_query(
     history: list[HistoryMessage] | None = None,
 ) -> ChatResponse:
     k = top_k or settings.top_k
-    chunks = store.similarity_search_with_score(query, k=k)
+    document_count = store.count_documents()
+
+    chunks = []
+    if document_count:
+        chunks = store.similarity_search_with_score(query, k=k)
 
     logger.info(
-        "retrieved %d chunk(s) for query=%r (index=%s namespace=%r)",
+        "retrieved %d chunk(s) for query=%r (index=%s namespace=%r, %d document(s) recorded)",
         len(chunks),
         query[:80],
         settings.pinecone_index or settings.pinecone_host,
         settings.pinecone_namespace,
+        document_count,
     )
 
-    if not chunks:
+    if document_count and not chunks:
         raise EmptyRetrievalError(
             "Pinecone returned no matches even though "
-            f"{store.count_documents()} document(s) are recorded locally. The vectors were "
+            f"{document_count} document(s) are recorded locally. The vectors were "
             "probably written to a different index or namespace (or removed). Inspect "
             "GET /api/diagnostics to compare the manifest with Pinecone's vector counts."
         )
 
-    context = _format_context(chunks)
-    human = (
-        f"Context from the uploaded documents:\n\n{context}\n\n"
-        f"Question: {query}\n\n"
-        "Answer using only the context above."
-    )
+    if chunks:
+        context = _format_context(chunks)
+        human = (
+            f"Context from the uploaded documents:\n\n{context}\n\n"
+            f"Question: {query}\n\n"
+            "Answer using only the context above."
+        )
+    else:
+        # No documents yet: stay in character and guide the user instead of failing.
+        human = (
+            "No documents have been uploaded yet, so there is no document context.\n\n"
+            f"Question: {query}\n\n"
+            "Reply as your persona: greet the user or answer questions about who you are "
+            "naturally. If the user is asking about documents, explain that nothing has "
+            "been uploaded yet and invite them to upload a file first."
+        )
 
-    messages = [SystemMessage(content=SYSTEM_PROMPT)]
+    messages = [SystemMessage(content=build_system_prompt(settings))]
     messages.extend(_history_to_messages(history or []))
     messages.append(HumanMessage(content=human))
 
@@ -131,4 +162,10 @@ def answer_query(
         for doc, score in chunks
     ]
 
-    return ChatResponse(answer=answer_text, sources=sources, provider=settings.provider, model=settings.chat_model)
+    return ChatResponse(
+        answer=answer_text,
+        sources=sources,
+        provider=settings.provider,
+        model=settings.chat_model,
+        chatbot_name=settings.chatbot_display_name,
+    )

@@ -18,6 +18,7 @@ def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
     return HealthResponse(
         status="ok",
         provider=settings.provider,
+        chatbot_name=settings.chatbot_display_name,
         chat_model=settings.chat_model,
         embedding_model=settings.embedding_model,
         embedding_provider="pinecone",

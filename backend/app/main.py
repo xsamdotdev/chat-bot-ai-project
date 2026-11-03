@@ -21,11 +21,12 @@ def create_app() -> FastAPI:
     settings.vectorstore_dir.mkdir(parents=True, exist_ok=True)
 
     app = FastAPI(
-        title="RAG Document Chatbot API",
+        title=f"{settings.chatbot_display_name} — RAG Document Chatbot API",
         version=__version__,
         description=(
-            "Upload large documents (PDF, DOCX, TXT, MD); ask questions; "
-            "get answers grounded in vector-searched context via LangChain."
+            f"{settings.chatbot_display_name} is a friendly document assistant: upload "
+            "documents (PDF, DOCX, TXT, MD), ask questions, get answers grounded in "
+            "vector-searched context via LangChain."
         ),
     )
 
@@ -48,7 +49,12 @@ def create_app() -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def root() -> dict:
-        return {"service": "rag-document-chatbot", "version": __version__, "docs": "/docs"}
+        return {
+            "service": "rag-document-chatbot",
+            "chatbot": settings.chatbot_display_name,
+            "version": __version__,
+            "docs": "/docs",
+        }
 
     return app
 

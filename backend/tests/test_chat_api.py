@@ -7,9 +7,27 @@ def _ingest_sample(client, sample_text_file):
     assert response.status_code == 201, response.text
 
 
-def test_chat_before_any_upload_returns_409(client):
-    response = client.post("/api/chat", json={"query": "What is this about?"})
-    assert response.status_code == 409
+def test_chat_without_documents_still_replies_as_persona(client):
+    """No documents yet: answer conversationally instead of returning an error."""
+    response = client.post("/api/chat", json={"query": "Hi Lisa, who are you?"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sources"] == []
+    assert body["chatbot_name"] == "Lisa"
+
+
+def test_system_prompt_defines_lisa_persona():
+    from app.config import Settings
+    from app.services.rag import build_system_prompt
+
+    settings = Settings(_env_file=None, provider="fake")
+    prompt = build_system_prompt(settings)
+
+    assert settings.chatbot_display_name == "Lisa"
+    assert "Lisa" in prompt
+    assert "female" in prompt.lower()
+    assert "chatbot" in prompt.lower()
+    assert "not a human" in prompt.lower()
 
 
 def test_content_to_text_handles_gemini_content_blocks():
@@ -63,6 +81,7 @@ def test_chat_normalizes_content_blocks_from_gemini(client, sample_text_file, mo
     response = client.post("/api/chat", json={"query": "Where does photosynthesis happen?"})
     assert response.status_code == 200, response.text
     assert response.json()["answer"] == "Answer from content blocks."
+    assert response.json()["chatbot_name"] == "Lisa"
 
 
 def test_chat_reports_missing_vectors_instead_of_guessing(client, sample_text_file):
@@ -96,12 +115,13 @@ def test_chat_returns_answer_and_sources(client, sample_text_file):
         assert source["doc_id"]
 
 
-def test_chat_after_deleting_all_documents_returns_409(client, sample_text_file):
+def test_chat_after_deleting_all_documents_still_replies(client, sample_text_file):
     _ingest_sample(client, sample_text_file)
     doc_id = client.get("/api/documents").json()["documents"][0]["doc_id"]
     assert client.delete(f"/api/documents/{doc_id}").status_code == 200
     response = client.post("/api/chat", json={"query": "still there?"})
-    assert response.status_code == 409
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
 
 
 def test_chat_respects_history_and_validation(client, sample_text_file):
