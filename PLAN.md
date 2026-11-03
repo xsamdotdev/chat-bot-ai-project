@@ -95,7 +95,7 @@ compose.yaml             # backend service only
 
 ## Verification summary
 
-- `pytest` — 29/29 green, fully offline (fake LLM + in-memory fake Pinecone).
+- `pytest` — 30/30 green, fully offline (fake LLM + in-memory fake Pinecone).
 - `docker compose config` — valid.
 - Container smoke test — boots healthy; health reports the Gemini/Pinecone
   configuration; a misconfigured upload returns a clear `503` with the missing

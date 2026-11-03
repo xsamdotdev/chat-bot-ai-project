@@ -126,3 +126,26 @@ def test_pinecone_host_connects_by_url(tmp_path, fake_pinecone):
     assert client.index_host == host
     assert client.index_name is None
     assert manager.list_documents()[0]["pinecone_host"] == host
+
+
+def test_document_schema_index_gets_actionable_error(tmp_path, monkeypatch):
+    """Pinecone document-schema indexes reject vector writes; explain the fix instead of a raw 400."""
+
+    class SchemaIndex(FakeIndex):
+        def upsert(self, vectors, namespace=""):
+            raise RuntimeError(
+                "[400] This index has a document schema, so writes must go through the documents API."
+            )
+
+    class SchemaClient:
+        def __init__(self, api_key=None, **kwargs):
+            self._index = SchemaIndex()
+
+        def Index(self, name=None, host=None):  # noqa: N802
+            return self._index
+
+    monkeypatch.setattr("pinecone.Pinecone", SchemaClient)
+    manager = vs.VectorStoreManager(_settings(tmp_path), embeddings=DeterministicFakeEmbedding(size=8))
+
+    with pytest.raises(RuntimeError, match="standard vector index"):
+        manager.add_documents([_doc()], doc_id="d1", filename="x.txt", size_bytes=1)

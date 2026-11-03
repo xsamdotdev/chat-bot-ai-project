@@ -316,6 +316,38 @@ PLAN.md
 - `PROVIDER=fake` is for tests/smoke checks only — answers are deterministic
   echoes and embeddings are fake (still requires a mocked/real Pinecone index).
 
+## Troubleshooting
+
+**`This index has a document schema, so writes must go through the documents API`**
+
+Your index was created as a *document-schema* index (Pinecone's documents API /
+integrated embedding). This backend stores raw vectors and needs a **standard
+vector index**. Create one and point the app at it:
+
+- **Console:** Indexes → Create index → choose the regular/custom vector index
+  type (not "documents" / "integrated embedding"), dimension **1024**, metric
+  **cosine**, serverless.
+- **SDK** (runs inside the backend image, so no local install needed):
+
+  ```bash
+  docker compose run --rm --entrypoint python backend -c "from pinecone import Pinecone, ServerlessSpec; import os; Pinecone(api_key=os.environ['PINECONE_API_KEY']).create_index(name='chat-bot-vectors', dimension=1024, metric='cosine', spec=ServerlessSpec(cloud='aws', region='us-east-1'))"
+  ```
+
+Then `PINECONE_INDEX=chat-bot-vectors` (or the new host URL as `PINECONE_HOST`)
+and restart: `docker compose up -d --build`.
+
+**`Vector dimension ... does not match the dimension of the index`**
+
+The index dimension must be **1024** for the supported embedding models
+(`llama-text-embed-v2`, `multilingual-e5-large`). Recreate the index or change
+`PINECONE_EMBEDDING_MODEL`.
+
+**`PINECONE_API_KEY is not set` / `PINECONE_INDEX is not set`**
+
+Set them in the repo-root `.env` (Docker) or `backend/.env` (local run), then
+restart. On Linux/macOS use `export KEY=value` or a `.env` file — `$env:KEY=...`
+is PowerShell-only.
+
 ## Roadmap
 
 - [ ] Frontend (React) — next

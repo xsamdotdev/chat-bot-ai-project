@@ -35,6 +35,26 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _translate_store_error(exc: Exception) -> Exception:
+    """Turn Pinecone's terse index-type errors into actionable configuration errors."""
+    text = str(exc).lower()
+    if "document schema" in text:
+        return RuntimeError(
+            "The configured Pinecone index uses a document schema (documents API), but this "
+            "backend stores raw vectors. Recreate the index as a standard vector index "
+            "(dimension 1024, metric cosine, no integrated embedding / schema), then point "
+            "PINECONE_INDEX or PINECONE_HOST at it. See README → Troubleshooting."
+        )
+    if "dimension" in text and ("does not match" in text or "mismatch" in text):
+        return RuntimeError(
+            "The Pinecone index dimension does not match the embedding model. "
+            "llama-text-embed-v2 and multilingual-e5-large output 1024-dim vectors — "
+            "create the index with dimension 1024 (metric cosine) or change "
+            "PINECONE_EMBEDDING_MODEL. See README → Troubleshooting."
+        )
+    return exc
+
+
 class VectorStoreManager:
     def __init__(self, settings: Settings, embeddings=None):
         self.settings = settings
@@ -118,7 +138,10 @@ class VectorStoreManager:
         ids = [f"{doc_id}:{doc.metadata['chunk_index']}" for doc in docs]
 
         with self._lock:
-            self._vector_store().add_documents(docs, ids=ids)
+            try:
+                self._vector_store().add_documents(docs, ids=ids)
+            except Exception as exc:
+                raise _translate_store_error(exc) from exc
 
             manifest = self._load_manifest()
             manifest[doc_id] = {
@@ -141,7 +164,10 @@ class VectorStoreManager:
             raise VectorStoreNotReadyError(
                 "No documents have been ingested yet. Upload a document first."
             )
-        return self._vector_store().similarity_search_with_score(query, k=k)
+        try:
+            return self._vector_store().similarity_search_with_score(query, k=k)
+        except Exception as exc:
+            raise _translate_store_error(exc) from exc
 
     def list_documents(self) -> list[dict]:
         manifest = self._load_manifest()
@@ -160,7 +186,10 @@ class VectorStoreManager:
             chunk_count = int(entry.get("chunks", 0))
             ids = [f"{doc_id}:{i}" for i in range(chunk_count)]
             if ids:
-                self._vector_store().delete(ids)
+                try:
+                    self._vector_store().delete(ids)
+                except Exception as exc:
+                    raise _translate_store_error(exc) from exc
 
             del manifest[doc_id]
             self._save_manifest(manifest)
