@@ -184,6 +184,7 @@ Base URL: `http://localhost:8000` — all endpoints live under `/api`.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/health` | Liveness + active models + docs indexed |
+| GET | `/api/diagnostics` | Manifest vs. Pinecone stats (debug missing sources) |
 | POST | `/api/documents/upload` | Multipart upload & ingest (201) |
 | GET | `/api/documents` | List ingested documents |
 | DELETE | `/api/documents/{doc_id}` | Remove a document and its vectors |
@@ -278,7 +279,7 @@ backend/
     config.py               # pydantic-settings (.env)
     schemas.py              # request/response models
     api/routes/
-      health.py             # GET /api/health
+      health.py             # GET /api/health, /api/diagnostics
       documents.py          # upload / list / delete
       chat.py               # POST /api/chat (RAG)
     services/
@@ -347,6 +348,30 @@ The index dimension must be **1024** for the supported embedding models
 Set them in the repo-root `.env` (Docker) or `backend/.env` (local run), then
 restart. On Linux/macOS use `export KEY=value` or a `.env` file — `$env:KEY=...`
 is PowerShell-only.
+
+**Upload succeeds, but `/api/chat` returns `"sources": []`**
+
+The backend now answers with a `409` explaining this instead of a fake "I don't
+know". Check the live state:
+
+```bash
+curl -s localhost:8000/api/diagnostics | python3 -m json.tool
+```
+
+It shows the configured index/host/namespace, what each uploaded document was
+ingested into, Pinecone's actual vector counts per namespace, and `warnings`.
+Typical causes (all listed there):
+
+- documents were uploaded while `PINECONE_INDEX`/`PINECONE_HOST` pointed at a
+  different index — upload them again;
+- vectors are in another namespace than `PINECONE_NAMESPACE`;
+- Pinecone reports `0` vectors — the writes went elsewhere;
+- the index was recreated after the uploads.
+
+**`"answer"` looks like `[{'type': 'text', ...}]`**
+
+Fixed: Gemini 3.x returns structured content blocks and the API now flattens
+them to plain text. Rebuild (`docker compose up -d --build`) if you still see it.
 
 ## Roadmap
 

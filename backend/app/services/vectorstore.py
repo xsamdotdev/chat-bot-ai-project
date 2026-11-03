@@ -31,6 +31,10 @@ class VectorStoreNotReadyError(RuntimeError):
     """Raised when a query arrives before any document has been ingested."""
 
 
+class EmptyRetrievalError(RuntimeError):
+    """Raised when the manifest lists documents but Pinecone returns no matches."""
+
+
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -175,6 +179,20 @@ class VectorStoreManager:
 
     def count_documents(self) -> int:
         return len(self._load_manifest())
+
+    def describe_index_stats(self) -> dict:
+        """Return Pinecone's vector counts per namespace (for `/api/diagnostics`)."""
+        stats = self._pinecone_index().describe_index_stats()
+        namespaces: dict[str, int | None] = {}
+        for name, summary in (getattr(stats, "namespaces", None) or {}).items():
+            if isinstance(summary, dict):
+                namespaces[name] = summary.get("vector_count")
+            else:
+                namespaces[name] = getattr(summary, "vector_count", None)
+        return {
+            "total_vector_count": getattr(stats, "total_vector_count", None),
+            "namespaces": namespaces,
+        }
 
     def delete_document(self, doc_id: str) -> int:
         with self._lock:

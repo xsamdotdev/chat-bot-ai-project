@@ -7,6 +7,7 @@ from app.config import Settings, get_settings
 from app.schemas import ChatRequest, ChatResponse
 from app.services.rag import answer_query
 from app.services.vectorstore import (
+    EmptyRetrievalError,
     VectorStoreNotReadyError,
     get_vectorstore_manager,
 )
@@ -31,6 +32,8 @@ async def chat(
             )
         )
     except VectorStoreNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EmptyRetrievalError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RuntimeError as exc:
         # Missing API key / provider misconfiguration

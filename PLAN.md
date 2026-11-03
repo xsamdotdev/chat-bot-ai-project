@@ -45,7 +45,7 @@ backend/
     config.py          # pydantic-settings (.env)
     schemas.py         # Pydantic request/response models
     api/routes/
-      health.py        # GET /api/health
+      health.py        # GET /api/health, /api/diagnostics
       documents.py     # POST /api/documents/upload, GET /api/documents, DELETE /api/documents/{id}
       chat.py          # POST /api/chat  (RAG: retrieve -> generate)
     services/
@@ -71,6 +71,7 @@ compose.yaml             # backend service only
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Liveness + active models + docs indexed |
+| GET | `/api/diagnostics` | Manifest vs. live Pinecone stats + warnings |
 | POST | `/api/documents/upload` | Multipart upload (pdf/docx/txt/md) → ingest |
 | GET | `/api/documents` | List ingested documents |
 | DELETE | `/api/documents/{doc_id}` | Remove document chunks from Pinecone |
@@ -95,7 +96,7 @@ compose.yaml             # backend service only
 
 ## Verification summary
 
-- `pytest` — 30/30 green, fully offline (fake LLM + in-memory fake Pinecone).
+- `pytest` — 36/36 green, fully offline (fake LLM + in-memory fake Pinecone).
 - `docker compose config` — valid.
 - Container smoke test — boots healthy; health reports the Gemini/Pinecone
   configuration; a misconfigured upload returns a clear `503` with the missing

@@ -12,6 +12,72 @@ def test_chat_before_any_upload_returns_409(client):
     assert response.status_code == 409
 
 
+def test_content_to_text_handles_gemini_content_blocks():
+    from app.services.rag import _content_to_text
+
+    assert _content_to_text("plain answer") == "plain answer"
+    assert _content_to_text(None) == ""
+    assert (
+        _content_to_text(
+            [
+                {"type": "text", "text": "Hello", "extras": {"signature": "sig"}},
+                {"type": "thinking", "text": "internal reasoning"},
+                {"type": "text", "text": "world"},
+            ]
+        )
+        == "Hello\nworld"
+    )
+
+
+def test_chat_normalizes_content_blocks_from_gemini(client, sample_text_file, monkeypatch):
+    """Gemini 3.x returns a list of content blocks; the API must return plain text."""
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    class BlockChatModel(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "block-fake"
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content=[
+                                {
+                                    "type": "text",
+                                    "text": "Answer from content blocks.",
+                                    "extras": {"signature": "sig"},
+                                }
+                            ]
+                        )
+                    )
+                ]
+            )
+
+    _ingest_sample(client, sample_text_file)
+    monkeypatch.setattr("app.services.rag.get_chat_model", lambda settings: BlockChatModel())
+
+    response = client.post("/api/chat", json={"query": "Where does photosynthesis happen?"})
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"] == "Answer from content blocks."
+
+
+def test_chat_reports_missing_vectors_instead_of_guessing(client, sample_text_file):
+    """Manifest non-empty but Pinecone has no matches -> actionable error, not 'I don't know'."""
+    from fakes import FakePinecone
+
+    _ingest_sample(client, sample_text_file)
+    FakePinecone.instances[-1]._index.vectors.clear()
+
+    response = client.post("/api/chat", json={"query": "anything"})
+    assert response.status_code == 409
+    assert "no matches" in response.json()["detail"]
+    assert "/api/diagnostics" in response.json()["detail"]
+
+
 def test_chat_returns_answer_and_sources(client, sample_text_file):
     _ingest_sample(client, sample_text_file)
 

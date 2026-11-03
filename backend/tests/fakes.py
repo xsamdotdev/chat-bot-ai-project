@@ -53,6 +53,15 @@ class FakeIndex:
             if stored and stored[2] == ns:
                 del self.vectors[vector_id]
 
+    def describe_index_stats(self):
+        counts: dict[str, int] = {}
+        for _values, _metadata, vector_ns in self.vectors.values():
+            counts[vector_ns] = counts.get(vector_ns, 0) + 1
+        return SimpleNamespace(
+            total_vector_count=len(self.vectors),
+            namespaces={ns: SimpleNamespace(vector_count=c) for ns, c in counts.items()},
+        )
+
 
 def _matches(metadata: dict, pinecone_filter: dict) -> bool:
     """Very small subset of Pinecone filter semantics: equality / $eq."""

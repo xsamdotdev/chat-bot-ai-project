@@ -17,6 +17,21 @@ class HealthResponse(BaseModel):
     documents_indexed: int
 
 
+class DiagnosticsResponse(BaseModel):
+    """Everything needed to explain 'documents uploaded but no sources returned'."""
+
+    provider: str
+    chat_model: str
+    embedding_model: str
+    pinecone_index: str | None = None
+    pinecone_host: str | None = None
+    pinecone_namespace: str
+    documents_indexed: int
+    manifest_documents: list[dict]
+    index_stats: dict | None = None  # total_vector_count + per-namespace counts
+    warnings: list[str] = Field(default_factory=list)
+
+
 # ------------------------------------------------------------- documents
 class DocumentInfo(BaseModel):
     doc_id: str

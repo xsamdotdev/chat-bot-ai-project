@@ -1,11 +1,15 @@
 """RAG pipeline: retrieve relevant chunks, then generate an answer with the chat model."""
 
+import logging
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.config import Settings
 from app.schemas import ChatResponse, HistoryMessage, Source
 from app.services.llm import get_chat_model
-from app.services.vectorstore import VectorStoreManager
+from app.services.vectorstore import EmptyRetrievalError, VectorStoreManager
+
+logger = logging.getLogger("chatbot.rag")
 
 SYSTEM_PROMPT = (
     "You are a precise document question-answering assistant.\n"
@@ -17,6 +21,40 @@ SYSTEM_PROMPT = (
 )
 
 SNIPPET_LEN = 280
+
+
+def _block_text(block) -> str:
+    """Extract plain text from one message content block."""
+    if isinstance(block, str):
+        return block
+    if isinstance(block, dict):
+        # Gemini 3.x emits {"type": "text", "text": ..., "extras": {"signature": ...}}.
+        # Skip non-text parts (e.g. reasoning/thinking blocks).
+        if block.get("type", "text") != "text":
+            return ""
+        text = block.get("text")
+        return text if isinstance(text, str) else ""
+    text = getattr(block, "text", None)
+    return text if isinstance(text, str) else ""
+
+
+def _content_to_text(content) -> str:
+    """Normalize model output to a plain string.
+
+    Gemini 3.x models return `AIMessage.content` as a list of content blocks
+    (optionally with thought signatures) instead of a plain string. Stringifying
+    that list leaks Python repr into the API response.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return _block_text(content)
+    if isinstance(content, (list, tuple)):
+        parts = [text for text in (_block_text(block) for block in content) if text]
+        return "\n".join(parts).strip()
+    return str(content)
 
 
 def _format_context(chunks) -> str:
@@ -50,6 +88,22 @@ def answer_query(
     k = top_k or settings.top_k
     chunks = store.similarity_search_with_score(query, k=k)
 
+    logger.info(
+        "retrieved %d chunk(s) for query=%r (index=%s namespace=%r)",
+        len(chunks),
+        query[:80],
+        settings.pinecone_index or settings.pinecone_host,
+        settings.pinecone_namespace,
+    )
+
+    if not chunks:
+        raise EmptyRetrievalError(
+            "Pinecone returned no matches even though "
+            f"{store.count_documents()} document(s) are recorded locally. The vectors were "
+            "probably written to a different index or namespace (or removed). Inspect "
+            "GET /api/diagnostics to compare the manifest with Pinecone's vector counts."
+        )
+
     context = _format_context(chunks)
     human = (
         f"Context from the uploaded documents:\n\n{context}\n\n"
@@ -63,7 +117,7 @@ def answer_query(
 
     model = get_chat_model(settings)
     result = model.invoke(messages)
-    answer_text = result.content if isinstance(result.content, str) else str(result.content)
+    answer_text = _content_to_text(result.content)
 
     sources = [
         Source(
