@@ -7,8 +7,8 @@ def get_pinecone_client(settings: Settings):
     """Create a Pinecone client, failing with actionable messages when unconfigured."""
     if not settings.pinecone_api_key:
         raise RuntimeError(
-            "PINECONE_API_KEY is not set. Add it to backend/.env "
-            "(get a key at https://app.pinecone.io)."
+            "PINECONE_API_KEY is not set. Set it in the repo-root .env (Docker) or "
+            "backend/.env (local uvicorn) — get a key at https://app.pinecone.io."
         )
     from pinecone import Pinecone  # imported lazily so tests can monkeypatch it
 

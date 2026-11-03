@@ -104,7 +104,7 @@ and the host is under the index's details.
 
 ```bash
 # repo root
-cp backend/.env.example .env      # fill in keys (or export env vars)
+cp .env.example .env             # fill in keys (or export env vars)
 docker compose up --build
 ```
 

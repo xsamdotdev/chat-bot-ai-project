@@ -49,7 +49,8 @@ def get_chat_model(settings: Settings) -> BaseChatModel:
 
         if not settings.google_api_key:
             raise RuntimeError(
-                "GOOGLE_API_KEY (or GEMINI_API_KEY) is not set. Add it to backend/.env."
+                "GOOGLE_API_KEY (or GEMINI_API_KEY) is not set. Set it in the repo-root .env "
+                "(Docker) or backend/.env (local uvicorn), then restart/recreate the container."
             )
         kwargs: dict = {
             "model": settings.google_chat_model,
