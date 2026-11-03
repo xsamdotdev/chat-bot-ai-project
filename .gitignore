@@ -10,7 +10,8 @@ venv/
 
 # Environment & local config
 .env
-
+.env.*
+!.env.example
 # Runtime data (uploads + FAISS indexes)
 backend/storage/
 
