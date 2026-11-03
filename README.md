@@ -14,7 +14,7 @@ Frontend is intentionally not included yet — this repo currently ships the API
 - ✂️ Automatic parsing → chunking (`RecursiveCharacterTextSplitter`)
 - 🔍 Vector similarity search over a **persistent local FAISS** index
 - 🤖 Chat answers via LangChain, grounded in retrieved context, with **source citations**
-- 🔌 **OpenAI** (or any OpenAI-compatible endpoint) **or fully-local Ollama** — switched with one `.env` variable
+- 🔌 **OpenAI** (or any OpenAI-compatible endpoint), **Mistral AI**, or **fully-local Ollama** — switched with one `.env` variable
 - 🧪 `fake` provider for fully offline development/smoke tests (no keys needed)
 - 🗂️ Per-embedding-model index isolation + document manifest (list / delete documents)
 - ✅ Pytest suite that runs offline, OpenAPI docs at `/docs`
@@ -64,6 +64,9 @@ volume (`/data` inside the container). `docker compose down` keeps them;
 # OpenAI instead of Ollama — starts only the backend, no model downloads
 PROVIDER=openai OPENAI_API_KEY=sk-... docker compose up --build backend --no-deps
 
+# Mistral AI instead of Ollama — same, starts only the backend
+PROVIDER=mistral MISTRAL_API_KEY=... docker compose up --build backend --no-deps
+
 # Fully offline fake mode (smoke tests, frontend dev)
 PROVIDER=fake docker compose up --build backend --no-deps
 
@@ -92,7 +95,7 @@ backend/
     services/
       document_loader.py    # PDF/DOCX/TXT/MD → LangChain Documents
       chunking.py           # RecursiveCharacterTextSplitter wrapper
-      embeddings.py         # provider factory (openai | ollama | fake)
+      embeddings.py         # provider factory (openai | ollama | mistral | fake)
       llm.py                # provider factory + offline EchoChatModel
       vectorstore.py        # FAISS manager: add/search/delete + manifest
       rag.py                # retrieve → prompt → LLM → answer + sources
@@ -107,6 +110,7 @@ backend/
 - Python 3.11+ (developed/tested on 3.14)
 - One of:
   - an **OpenAI API key** (`PROVIDER=openai`), or
+  - a **Mistral AI API key** (`PROVIDER=mistral`), or
   - **Ollama** running locally with pulled models (`PROVIDER=ollama`), or
   - nothing at all (`PROVIDER=fake` — offline dev stub)
 
@@ -153,7 +157,20 @@ OLLAMA_CHAT_MODEL=llama3.1
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
 
-### Option C — fake (offline smoke tests / frontend dev without AI)
+### Option C — Mistral AI
+
+```env
+PROVIDER=mistral
+MISTRAL_API_KEY=...
+MISTRAL_CHAT_MODEL=mistral-small
+MISTRAL_EMBEDDING_MODEL=mistral-embed
+```
+
+Chat and embeddings both go through the Mistral API (embeddings: `mistral-embed`,
+1024-dim). To point at a self-hosted/proxy, set `MISTRAL_BASE_URL` (defaults to
+`https://api.mistral.ai/v1/`). Get a key at <https://console.mistral.ai/>.
+
+### Option D — fake (offline smoke tests / frontend dev without AI)
 
 ```env
 PROVIDER=fake
@@ -247,7 +264,7 @@ Everything is set via `backend/.env` (see `.env.example`):
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PROVIDER` | `openai` | `openai` \| `ollama` \| `fake` |
+| `PROVIDER` | `openai` | `openai` \| `ollama` \| `mistral` \| `fake` |
 | `OPENAI_API_KEY` | — | required for `openai` |
 | `OPENAI_BASE_URL` | — | for OpenAI-compatible endpoints |
 | `OPENAI_CHAT_MODEL` | `gpt-4o-mini` | any chat model on the endpoint |
@@ -255,6 +272,10 @@ Everything is set via `backend/.env` (see `.env.example`):
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | |
 | `OLLAMA_CHAT_MODEL` | `llama3.1` | |
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | |
+| `MISTRAL_API_KEY` | — | required for `mistral` |
+| `MISTRAL_BASE_URL` | — | defaults to `https://api.mistral.ai/v1/`; set for proxies/self-hosted |
+| `MISTRAL_CHAT_MODEL` | `mistral-small` | any chat model on the Mistral API |
+| `MISTRAL_EMBEDDING_MODEL` | `mistral-embed` | changing it switches the index dir |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `200` | overlap must be < chunk size |
 | `TOP_K` | `4` | chunks retrieved per query (per-request override allowed) |
 | `MAX_UPLOAD_SIZE_MB` | `50` | streamed to disk, enforced mid-upload |
@@ -262,7 +283,7 @@ Everything is set via `backend/.env` (see `.env.example`):
 | `UPLOAD_DIR` / `VECTORSTORE_DIR` | `backend/storage/...` | runtime data, gitignored |
 
 > **Switching providers:** the FAISS index lives in `storage/vectorstore/<embedding-model>/`,
-> so OpenAI and Ollama vectors never mix. Documents ingested under one model don't
+> so OpenAI, Ollama and Mistral vectors never mix. Documents ingested under one model don't
 > appear under another — re-upload after switching (or keep `VECTORSTORE_DIR` per env).
 
 ## Running the tests

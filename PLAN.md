@@ -32,7 +32,8 @@ Frontend is out of scope (user will build it later). Backend lives in `backend/`
 | RAG orchestration | LangChain (`langchain`, `langchain-community`, `langchain-openai`, `langchain-ollama`) | Requirement |
 | Vector store | FAISS (`faiss-cpu`), persisted to disk | Local, zero infra, per-embedding-model index dir |
 | Chunking | `RecursiveCharacterTextSplitter` (1000/200, configurable) | Solid default for prose/docs |
-| Providers | `PROVIDER=openai\|ollama\|fake` in `.env` | User chose openai/ollama switch; `fake` added for offline dev |
+| Providers | `PROVIDER=openai\|ollama\|mistral\|fake` in `.env` | User chose provider switch; `fake` added for offline dev |
+| Mistral AI | `langchain-mistralai`: `mistral-small` chat, `mistral-embed` embeddings, `MISTRAL_BASE_URL` override supported | Official partner package; embeddings via Mistral API as requested |
 | Embeddings (openai) | `text-embedding-3-small` | Cheap, strong |
 | Embeddings (ollama) | `nomic-embed-text` | Standard local embedding model |
 | Chat models | `gpt-4o-mini` / `llama3.1` (configurable) | Sensible defaults, overridable |
@@ -100,7 +101,10 @@ PLAN.md                  # this file
 - [x] Dockerfile (slim, non-root, healthcheck, /data volume) + backend/.dockerignore
 - [x] compose.yaml: ollama + one-shot model pull (llama3.1, nomic-embed-text) + backend; volumes `ollama-data`, `chatbot-data`
 - [x] README Docker section; compose config validated; backend image building
-- [ ] Build/verify backend container end-to-end (in progress — first layer pull is slow)
+- [x] Mistral AI support via langchain-mistralai (chat + mistral-embed embeddings), env passthrough in compose, offline tests (17/17 green)
+- [ ] Build/verify backend container end-to-end
+- [ ] Full local stack verification: ollama healthy (done), nomic-embed-text pulled (done), llama3.1 pulling (in progress);
+      backend will start automatically after the one-shot pull job completes
 
 ## Docker layout
 

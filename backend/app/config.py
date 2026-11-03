@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     # --- Provider selection -------------------------------------------------
     # openai  -> OpenAI (or any OpenAI-compatible endpoint via OPENAI_BASE_URL)
     # ollama  -> local Ollama server (no API key required)
+    # mistral -> Mistral AI API (MISTRAL_API_KEY)
     # fake    -> fully offline deterministic stubs (dev / smoke tests only)
-    provider: Literal["openai", "ollama", "fake"] = "openai"
+    provider: Literal["openai", "ollama", "mistral", "fake"] = "openai"
 
     # --- OpenAI --------------------------------------------------------------
     openai_api_key: str | None = None
@@ -37,6 +38,12 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1"
     ollama_embedding_model: str = "nomic-embed-text"
+
+    # --- Mistral AI -------------------------------------------------------------
+    mistral_api_key: str | None = None
+    mistral_base_url: str | None = None  # defaults to https://api.mistral.ai/v1/ when unset
+    mistral_chat_model: str = "mistral-small"
+    mistral_embedding_model: str = "mistral-embed"
 
     # --- Chunking / retrieval --------------------------------------------------
     chunk_size: int = Field(default=1000, gt=0)
@@ -74,6 +81,7 @@ class Settings(BaseSettings):
         return {
             "openai": self.openai_chat_model,
             "ollama": self.ollama_chat_model,
+            "mistral": self.mistral_chat_model,
             "fake": "fake-echo",
         }[self.provider]
 
@@ -82,6 +90,7 @@ class Settings(BaseSettings):
         return {
             "openai": self.openai_embedding_model,
             "ollama": self.ollama_embedding_model,
+            "mistral": self.mistral_embedding_model,
             "fake": "fake-embedding",
         }[self.provider]
 

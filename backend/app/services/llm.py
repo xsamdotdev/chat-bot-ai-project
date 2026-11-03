@@ -68,6 +68,23 @@ def get_chat_model(settings: Settings) -> BaseChatModel:
             temperature=0.1,
         )
 
+    if settings.provider == "mistral":
+        from langchain_mistralai import ChatMistralAI
+
+        if not settings.mistral_api_key:
+            raise RuntimeError(
+                "MISTRAL_API_KEY is not set. Add it to backend/.env "
+                "(or switch PROVIDER to 'openai', 'ollama' or 'fake')."
+            )
+        kwargs: dict = {
+            "model": settings.mistral_chat_model,
+            "mistral_api_key": settings.mistral_api_key,
+            "temperature": 0.1,
+        }
+        if settings.mistral_base_url:
+            kwargs["endpoint"] = settings.mistral_base_url
+        return ChatMistralAI(**kwargs)
+
     if settings.provider == "fake":
         return EchoChatModel()
 

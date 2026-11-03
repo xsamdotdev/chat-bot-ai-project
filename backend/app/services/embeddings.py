@@ -25,6 +25,19 @@ def get_embeddings(settings: Settings) -> Embeddings:
 
         return OllamaEmbeddings(model=settings.ollama_embedding_model, base_url=settings.ollama_base_url)
 
+    if settings.provider == "mistral":
+        from langchain_mistralai import MistralAIEmbeddings
+
+        if not settings.mistral_api_key:
+            raise RuntimeError(
+                "MISTRAL_API_KEY is not set. Add it to backend/.env "
+                "(or switch PROVIDER to 'openai', 'ollama' or 'fake')."
+            )
+        kwargs: dict = {"model": settings.mistral_embedding_model, "mistral_api_key": settings.mistral_api_key}
+        if settings.mistral_base_url:
+            kwargs["endpoint"] = settings.mistral_base_url
+        return MistralAIEmbeddings(**kwargs)
+
     if settings.provider == "fake":
         # Deterministic, offline embeddings for dev/smoke tests. NOT semantic.
         from langchain_core.embeddings import DeterministicFakeEmbedding
