@@ -1,0 +1,5 @@
+# Development / test dependencies
+-r requirements.txt
+pytest==9.2.0
+httpx==0.28.1
+fpdf2==2.9.0   # builds text-layer PDFs for ingestion tests
