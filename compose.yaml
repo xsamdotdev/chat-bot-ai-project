@@ -1,5 +1,6 @@
-# RAG Document Chatbot — backend stack
+# RAG Document Chatbot — full stack
 #
+#   frontend - React (Vite) SPA served by nginx; proxies /api -> backend
 #   backend  - FastAPI + LangChain RAG API. Gemini for chat, Pinecone for
 #              embeddings (hosted inference) + vector search.
 #              Uploads + the document manifest persist in `chatbot-data`.
@@ -54,6 +55,28 @@ services:
       - chatbot-data:/data
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: rag-chatbot-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
 
 volumes:
   chatbot-data:  # uploaded files + document manifest

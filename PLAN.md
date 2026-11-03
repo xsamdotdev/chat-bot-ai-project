@@ -1,10 +1,10 @@
-# PLAN.md — RAG Chatbot Backend
+# PLAN.md — RAG Chatbot (Lisa)
 
-Working plan for the document-Q&A chatbot backend. Kept up to date as tasks land.
+Working plan for the document-Q&A chatbot. Kept up to date as tasks land.
 
 ## Goal
 
-Build a production-shaped FastAPI backend that:
+Build a production-shaped document Q&A app that:
 
 1. Accepts large documents (PDF / DOCX / TXT / MD) via upload.
 2. Parses → chunks → embeds → stores them in **Pinecone**.
@@ -13,8 +13,10 @@ Build a production-shaped FastAPI backend that:
    structured `sources` list (no document/citation references in the answer text).
 4. Runs offline for tests via a `fake` provider (deterministic stubs + mocked
    Pinecone client).
+5. Ships with a React chat UI (upload, delete, conversation) served by nginx,
+   which proxies `/api` to the backend.
 
-Frontend is out of scope (user will build it later). Backend lives in `backend/`.
+Backend lives in `backend/`, frontend in `frontend/`.
 
 ## Key decisions
 
@@ -29,11 +31,15 @@ Frontend is out of scope (user will build it later). Backend lives in `backend/`
 | Chunking | `RecursiveCharacterTextSplitter` (1000/200, configurable) | Solid default for prose/docs |
 | Doc tracking | Local `manifest.json` per embedding model | List/delete without scanning index internals |
 | Delete semantics | Pinecone `delete(ids)` with `{doc_id}:{chunk_index}` ids | Real removal, not just hiding from the manifest |
-| Chat history | Stateless; client sends optional `history` array | No server-side session state, frontend owns state |
+| Chat history | Stateless; client sends optional `history` array | No server-side session state; bundled UI sends the last 12 messages |
+| Frontend | React 19 + TypeScript + Vite, hand-written CSS | Fast build, typed API models, no UI framework weight |
+| Frontend state | Plain React hooks (no router/state library) | Single-screen app; keeps dependencies minimal |
+| Frontend serving | Multi-stage Docker build → nginx, `/api` proxied to `backend` | Same-origin (no browser CORS), gzip + SPA fallback + 60 MB upload limit |
+| Source citations in UI | Hidden (API still returns `sources`) | Persona requirement: answers must not reveal document provenance |
 | API prefix | `/api` | Clean frontend integration |
 | Provider switch | `PROVIDER=gemini\|fake` | `fake` = offline tests/smoke checks only |
 | Assistant persona | **Lisa**, female AI chatbot; `CHATBOT_NAME` override | Prompt-level identity + small-talk handling; never claims to be human |
-| Containerization | Single `backend` service in `compose.yaml` | Gemini + Pinecone are external managed services; no local model/DB containers |
+| Containerization | `frontend` + `backend` services in `compose.yaml` | Gemini + Pinecone are external managed services; no local model/DB containers |
 | Backend image | python:3.14-slim, non-root user, `/data` volume | Wheels only, no compilers; secrets never in image |
 
 ## Project layout
@@ -62,9 +68,19 @@ backend/
   requirements.txt       # pinned
   .env.example
   pytest.ini
+frontend/
+  src/
+    App.tsx              # chat + sidebar state, send flow, history window
+    components/          # Sidebar, ChatView, MessageBubble, Composer, icons
+    lib/api.ts           # typed fetch wrapper for /api
+    lib/types.ts         # API + UI types
+    styles.css           # dark responsive theme
+  nginx.conf             # static SPA + /api proxy
+  Dockerfile             # node build -> nginx runtime
+  vite.config.ts         # dev proxy -> http://localhost:8000
 README.md                # repo root, user-facing docs
 PLAN.md                  # this file
-compose.yaml             # backend service only
+compose.yaml             # frontend + backend services
 ```
 
 ## API surface
@@ -87,7 +103,15 @@ compose.yaml             # backend service only
 - [x] requirements.txt (pinned), .env.example, .gitignore
 - [x] Offline pytest suite (fake provider + fake Pinecone)
 - [x] Dockerfile (slim, non-root, healthcheck, /data volume) + backend/.dockerignore
-- [x] compose.yaml (backend only) + `docker compose config` validation
+- [x] compose.yaml (backend) + backend healthcheck
+- [x] Frontend scaffold: Vite + React 19 + TypeScript, typed API client
+- [x] Chat UI: welcome/suggestions, bubbles, typing indicator, history, errors
+- [x] Documents UI: upload (button + drag/drop), list, delete, health footer
+- [x] Responsive dark theme with mobile sidebar drawer
+- [x] frontend Dockerfile (node build → nginx) + `.dockerignore`
+- [x] nginx config: SPA fallback, gzip, `/api` proxy, 60 MB upload limit
+- [x] compose.yaml: `frontend` service, waits for backend healthcheck
+- [x] `npm run build` verified locally (tsc + vite)
 - [x] Gemini LLM (`langchain-google-genai`)
 - [x] Pinecone for embeddings (hosted inference) + vector search (thin VectorStore adapter)
 - [x] Live local-stack verification: upload → embed → search → Gemini/llama answer with sources
@@ -98,10 +122,15 @@ compose.yaml             # backend service only
 ## Verification summary
 
 - `pytest` — 39/39 green, fully offline (fake LLM + in-memory fake Pinecone).
+- `npm run build` — `tsc --noEmit` + Vite production build pass.
 - `docker compose config` — valid.
 - Container smoke test — boots healthy; health reports the Gemini/Pinecone
   configuration; a misconfigured upload returns a clear `503` with the missing
   setting named.
+- Full-stack smoke test (`PROVIDER=fake`) — `compose up` starts the backend
+  healthy, nginx serves the SPA on :3000, `/api/health` works through the proxy,
+  the SPA fallback returns 200, and sending a message from the UI reaches the
+  backend and renders the reply.
 - Live Gemini + Pinecone calls remain unverified here (no real API keys
   available); config errors, embedding/upsert/query/delete semantics and the
   RAG pipeline are covered by offline tests.
@@ -115,3 +144,11 @@ compose.yaml             # backend service only
 - Pinecone hosted inference has request quotas; ingestion embeds in batches.
 - `PROVIDER=fake` is dev-only; answers are deterministic echoes, embeddings are
   fake vectors.
+- Chat history lives in React state only — a page refresh or **New chat** clears
+  it (the backend is stateless by design).
+- The UI hides `sources` per the persona requirement; the array is still in the
+  API response for custom frontends.
+- nginx caps uploads at 60 MB; raising `MAX_UPLOAD_SIZE_MB` above that also
+  requires editing `frontend/nginx.conf`.
+- `VITE_API_BASE_URL` is baked in at build time; changing it needs an image
+  rebuild.
