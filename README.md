@@ -1,7 +1,8 @@
 # RAG Document Chatbot — Backend
 
-Upload large documents (PDF, DOCX, TXT, MD), ask questions, get answers grounded
-in the document content — with source citations.
+Upload large documents (PDF, DOCX, TXT, MD), ask questions, get natural answers
+grounded in the document content — the API also returns structured source
+references your UI can choose to display.
 
 **Stack:** FastAPI + LangChain · **Gemini** for the LLM · **Pinecone** for
 embeddings (hosted inference) *and* vector search.
@@ -239,7 +240,7 @@ curl -X DELETE http://localhost:8000/api/documents/<doc_id>
 
 ```json
 {
-  "answer": "The main risks are ... [Source 1][Source 2]",
+  "answer": "The main risks are ...",
   "sources": [
     {
       "doc_id": "5a077245c2684e17acc95cec87f03b8a",
@@ -258,6 +259,10 @@ curl -X DELETE http://localhost:8000/api/documents/<doc_id>
 
 > `score` is Pinecone's cosine similarity — **higher is more similar**.
 > `page` is present for PDFs.
+>
+> The `answer` text never mentions documents, files, context or `[Source N]`
+> markers — it reads like Lisa simply knows the answer. The `sources` array is
+> still returned separately so the frontend can show references if desired.
 
 With no documents uploaded, `/api/chat` still replies in character (as Lisa)
 with an empty `sources` list. Common errors: `409` (documents are indexed but

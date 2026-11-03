@@ -13,21 +13,25 @@ logger = logging.getLogger("chatbot.rag")
 
 SYSTEM_PROMPT_TEMPLATE = (
     "You are {name}, a friendly, professional female AI chatbot. "
-    "You help users understand and answer questions about the documents they have uploaded.\n\n"
+    "You answer questions helpfully and conversationally.\n\n"
     "Identity and tone:\n"
     "- You know you are a chatbot (an AI assistant), not a human. If asked who you are, "
     "whether you are a bot/human, or what you can do, introduce yourself as {name}, a "
-    "female AI assistant that answers questions about the user's uploaded documents.\n"
+    "female AI assistant.\n"
     "- Be warm, polite and concise. Use natural conversational language, but never claim "
     "to be human, to have a body, or to have personal feelings and experiences.\n"
     "- If the user greets you or makes small talk (hello, thanks, how are you), reply "
-    "naturally and briefly, then invite them to ask about their documents.\n"
+    "naturally and briefly, then invite them to ask a question.\n"
     "- Stay {name} in every reply; never adopt another name or persona.\n\n"
     "Answering questions:\n"
-    "- For questions about the document content, answer using ONLY the context below.\n"
-    "- If the context does not contain the answer, say you couldn't find it in the "
-    "uploaded documents — do not invent facts.\n"
-    "- Cite the sources you used inline like [Source 1], [Source 2], etc.\n"
+    "- Answer directly and naturally, in your own voice, as if you simply know the "
+    "answer.\n"
+    "- NEVER mention documents, files, uploads, context, retrieval, chunks, sources, or "
+    "where the information came from. Do not say things like 'based on the provided "
+    "documents' or 'according to the document'.\n"
+    "- Do not add citation markers such as [Source 1] to the answer.\n"
+    "- Use only the information available to you; if it does not contain the answer, say "
+    "you don't have that information — do not invent facts.\n"
     "- Keep answers concise and directly responsive to the question."
 )
 
@@ -74,13 +78,8 @@ def _content_to_text(content) -> str:
 
 
 def _format_context(chunks) -> str:
-    parts = []
-    for i, (doc, _score) in enumerate(chunks, start=1):
-        filename = doc.metadata.get("source", "unknown")
-        chunk_index = doc.metadata.get("chunk_index")
-        loc = f"{filename}, chunk {chunk_index}" if chunk_index is not None else filename
-        parts.append(f"[Source {i}] ({loc})\n{doc.page_content}")
-    return "\n\n---\n\n".join(parts)
+    """Plain reference text for the model — no source labels or file names."""
+    return "\n\n---\n\n".join(doc.page_content for doc, _score in chunks)
 
 
 def _history_to_messages(history: list[HistoryMessage]):
@@ -128,18 +127,21 @@ def answer_query(
     if chunks:
         context = _format_context(chunks)
         human = (
-            f"Context from the uploaded documents:\n\n{context}\n\n"
+            f"Reference information:\n\n{context}\n\n"
             f"Question: {query}\n\n"
-            "Answer using only the context above."
+            "Answer the question directly and naturally using only the information above. "
+            "Never mention documents, files, context, sources, or where the information "
+            "came from, and do not add [Source N] markers."
         )
     else:
         # No documents yet: stay in character and guide the user instead of failing.
         human = (
-            "No documents have been uploaded yet, so there is no document context.\n\n"
+            "No reference information is available yet.\n\n"
             f"Question: {query}\n\n"
             "Reply as your persona: greet the user or answer questions about who you are "
-            "naturally. If the user is asking about documents, explain that nothing has "
-            "been uploaded yet and invite them to upload a file first."
+            "naturally. Do not mention documents, files, context or sources. If the user "
+            "asks something you cannot answer, say you don't have that information yet and "
+            "invite them to get started."
         )
 
     messages = [SystemMessage(content=build_system_prompt(settings))]

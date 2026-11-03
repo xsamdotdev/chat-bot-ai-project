@@ -28,6 +28,36 @@ def test_system_prompt_defines_lisa_persona():
     assert "female" in prompt.lower()
     assert "chatbot" in prompt.lower()
     assert "not a human" in prompt.lower()
+    # The answer must not reveal where the knowledge comes from.
+    assert "never mention documents" in prompt.lower()
+
+
+def test_retrieval_context_has_no_source_labels(client, sample_text_file, monkeypatch):
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    captured: dict = {}
+
+    class CaptureChatModel(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "capture-fake"
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            captured["messages"] = messages
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content="ok"))])
+
+    _ingest_sample(client, sample_text_file)
+    monkeypatch.setattr("app.services.rag.get_chat_model", lambda settings: CaptureChatModel())
+
+    response = client.post("/api/chat", json={"query": "Where does photosynthesis happen?"})
+    assert response.status_code == 200, response.text
+
+    human = next(m for m in captured["messages"] if m.type == "human").content
+    assert "Reference information:" in human
+    assert "uploaded documents" not in human.lower()
+    assert "[Source 1]" not in human
 
 
 def test_content_to_text_handles_gemini_content_blocks():

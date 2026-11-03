@@ -9,8 +9,8 @@ Build a production-shaped FastAPI backend that:
 1. Accepts large documents (PDF / DOCX / TXT / MD) via upload.
 2. Parses → chunks → embeds → stores them in **Pinecone**.
 3. On each query: embeds the query → vector search → stuffs retrieved chunks
-   into a LangChain prompt → calls **Gemini** → returns the answer **with source
-   citations**.
+   into a LangChain prompt → calls **Gemini** → returns a natural answer plus a
+   structured `sources` list (no document/citation references in the answer text).
 4. Runs offline for tests via a `fake` provider (deterministic stubs + mocked
    Pinecone client).
 
@@ -97,7 +97,7 @@ compose.yaml             # backend service only
 
 ## Verification summary
 
-- `pytest` — 38/38 green, fully offline (fake LLM + in-memory fake Pinecone).
+- `pytest` — 39/39 green, fully offline (fake LLM + in-memory fake Pinecone).
 - `docker compose config` — valid.
 - Container smoke test — boots healthy; health reports the Gemini/Pinecone
   configuration; a misconfigured upload returns a clear `503` with the missing
