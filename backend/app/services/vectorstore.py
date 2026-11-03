@@ -1,11 +1,13 @@
-"""Persistent FAISS vector store with a JSON manifest of ingested documents.
+"""Pinecone vector store manager with a local JSON manifest of ingested documents.
 
-Layout (per embedding model, so switching providers never mixes vectors):
+Vectors (and their embeddings) live in Pinecone. A small manifest is kept on
+disk so the API can list documents and delete their vectors by id:
 
-    storage/vectorstore/<embedding_slug>/
-        index.faiss
-        index.pkl
-        manifest.json      # {doc_id: {doc_id, filename, chunks, size_bytes, uploaded_at}}
+    storage/vectorstore/<embedding-model>/
+        manifest.json   # {doc_id: {doc_id, filename, chunks, size_bytes, ...}}
+
+Chunk ids are `{doc_id}:{chunk_index}`, so deleting a document removes exactly
+its vectors from the configured index/namespace.
 """
 
 import json
@@ -18,6 +20,7 @@ from langchain_core.documents import Document
 
 from app.config import Settings
 from app.services.embeddings import get_embeddings
+from app.services.pinecone_client import get_pinecone_client, get_pinecone_index
 
 
 class DocumentNotFoundError(KeyError):
@@ -35,31 +38,45 @@ def _utcnow_iso() -> str:
 class VectorStoreManager:
     def __init__(self, settings: Settings, embeddings=None):
         self.settings = settings
-        self.embeddings = embeddings if embeddings is not None else get_embeddings(settings)
+        self._embeddings = embeddings
         self.index_dir: Path = settings.index_dir
         self.index_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_path: Path = self.index_dir / "manifest.json"
-        self._store = None  # lazy-loaded FAISS instance
+        self._client = None
+        self._index = None
+        self._store = None
         self._lock = threading.Lock()
 
-    # ------------------------------------------------------------------ FAISS
-    def _load_store(self):
-        if self._store is not None:
-            return self._store
-        if not (self.index_dir / "index.faiss").exists():
-            return None
-        from langchain_community.vectorstores import FAISS  # langchain-faiss is a placeholder; community still ships FAISS
+    # ------------------------------------------------------------- plumbing
+    @property
+    def embeddings(self):
+        if self._embeddings is None:
+            if self.settings.provider == "fake":
+                self._embeddings = get_embeddings(self.settings)
+            else:
+                self._embeddings = get_embeddings(self.settings, client=self._pinecone_client())
+        return self._embeddings
 
-        self._store = FAISS.load_local(
-            str(self.index_dir),
-            self.embeddings,
-            allow_dangerous_deserialization=True,  # our own index, created locally
-        )
+    def _pinecone_client(self):
+        if self._client is None:
+            self._client = get_pinecone_client(self.settings)
+        return self._client
+
+    def _pinecone_index(self):
+        if self._index is None:
+            self._index = get_pinecone_index(self.settings, client=self._pinecone_client())
+        return self._index
+
+    def _vector_store(self):
+        if self._store is None:
+            from app.services.pinecone_store import PineconeVectorStore
+
+            self._store = PineconeVectorStore(
+                index=self._pinecone_index(),
+                embedding=self.embeddings,
+                namespace=self.settings.pinecone_namespace,
+            )
         return self._store
-
-    def _save_store(self) -> None:
-        if self._store is not None:
-            self._store.save_local(str(self.index_dir))
 
     # --------------------------------------------------------------- manifest
     def _load_manifest(self) -> dict:
@@ -68,8 +85,8 @@ class VectorStoreManager:
         try:
             return json.loads(self.manifest_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
-            # Corrupt manifest should not take the service down; start empty
-            # but keep a backup for manual recovery.
+            # A corrupt manifest should not take the service down; keep a backup
+            # for manual recovery and start empty.
             backup = self.manifest_path.with_suffix(".json.bak")
             try:
                 os.replace(self.manifest_path, backup)
@@ -101,15 +118,7 @@ class VectorStoreManager:
         ids = [f"{doc_id}:{doc.metadata['chunk_index']}" for doc in docs]
 
         with self._lock:
-            store = self._load_store()
-            if store is None:
-                from langchain_community.vectorstores import FAISS  # see _load_store
-
-                store = FAISS.from_documents(docs, self.embeddings, ids=ids)
-            else:
-                store.add_documents(docs, ids=ids)
-            self._store = store
-            self._save_store()
+            self._vector_store().add_documents(docs, ids=ids)
 
             manifest = self._load_manifest()
             manifest[doc_id] = {
@@ -118,18 +127,21 @@ class VectorStoreManager:
                 "chunks": len(docs),
                 "size_bytes": size_bytes,
                 "uploaded_at": _utcnow_iso(),
+                "embedding_model": self.settings.embedding_model,
+                "pinecone_index": self.settings.pinecone_index,
+                "pinecone_host": self.settings.pinecone_host,
+                "pinecone_namespace": self.settings.pinecone_namespace,
             }
             self._save_manifest(manifest)
         return len(docs)
 
     def similarity_search_with_score(self, query: str, k: int):
-        store = self._load_store()
-        ntotal = getattr(getattr(store, "index", None), "ntotal", None) if store else None
-        if store is None or (ntotal is not None and ntotal == 0):
+        manifest = self._load_manifest()
+        if not manifest:
             raise VectorStoreNotReadyError(
                 "No documents have been ingested yet. Upload a document first."
             )
-        return store.similarity_search_with_score(query, k=k)
+        return self._vector_store().similarity_search_with_score(query, k=k)
 
     def list_documents(self) -> list[dict]:
         manifest = self._load_manifest()
@@ -147,24 +159,16 @@ class VectorStoreManager:
 
             chunk_count = int(entry.get("chunks", 0))
             ids = [f"{doc_id}:{i}" for i in range(chunk_count)]
-
-            store = self._load_store()
-            deleted = 0
-            if store is not None and ids:
-                try:
-                    store.delete(ids=ids)
-                    deleted = chunk_count
-                except Exception as exc:  # pragma: no cover - version-dependent
-                    raise RuntimeError(f"Failed to remove vectors for {doc_id}: {exc}") from exc
-                self._save_store()
+            if ids:
+                self._vector_store().delete(ids)
 
             del manifest[doc_id]
             self._save_manifest(manifest)
-            return deleted
+            return len(ids)
 
 
 # Lazily created singleton used by the API layer. Constructed on first use so
-# importing the app (e.g. in tests) does not hit provider clients.
+# importing the app (e.g. in tests) does not hit Pinecone.
 _manager: VectorStoreManager | None = None
 _manager_lock = threading.Lock()
 

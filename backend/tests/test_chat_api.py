@@ -22,7 +22,7 @@ def test_chat_returns_answer_and_sources(client, sample_text_file):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["provider"] == "fake"
-    assert "[fake-llm]" in body["answer"]
+    assert "[fake-echo]" in body["answer"]
     assert len(body["sources"]) == 3
     for source in body["sources"]:
         assert source["filename"] == "notes.txt"

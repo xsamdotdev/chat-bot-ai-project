@@ -1,17 +1,22 @@
-"""Shared pytest fixtures. All tests run fully offline (PROVIDER=fake)."""
+"""Shared pytest fixtures. All tests run fully offline (PROVIDER=fake + fake Pinecone)."""
 
 import pytest
 from fastapi.testclient import TestClient
+from fakes import FakePinecone
 
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    """TestClient wired to isolated temp storage and the offline fake provider."""
+    """TestClient wired to isolated temp storage, fake LLM and a fake Pinecone."""
     monkeypatch.setenv("PROVIDER", "fake")
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("VECTORSTORE_DIR", str(tmp_path / "vectorstore"))
     monkeypatch.setenv("CHUNK_SIZE", "200")
     monkeypatch.setenv("CHUNK_OVERLAP", "40")
+    monkeypatch.setenv("PINECONE_API_KEY", "test-key")
+    monkeypatch.setenv("PINECONE_INDEX", "test-index")
+    monkeypatch.setattr("pinecone.Pinecone", FakePinecone)
+    FakePinecone.instances.clear()
 
     from app.config import get_settings
 
@@ -29,6 +34,16 @@ def client(tmp_path, monkeypatch):
     finally:
         get_settings.cache_clear()
         reset_vectorstore_manager()
+        FakePinecone.instances.clear()
+
+
+@pytest.fixture()
+def fake_pinecone(monkeypatch):
+    """Install the fake Pinecone client for tests that build managers directly."""
+    monkeypatch.setattr("pinecone.Pinecone", FakePinecone)
+    FakePinecone.instances.clear()
+    yield FakePinecone
+    FakePinecone.instances.clear()
 
 
 @pytest.fixture()

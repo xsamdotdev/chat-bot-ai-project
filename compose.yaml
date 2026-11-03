@@ -1,87 +1,45 @@
-# RAG Document Chatbot — full local stack
+# RAG Document Chatbot — backend stack
 #
-#   ollama         - local LLM runtime; models persist in the `ollama-data` volume
-#   ollama-models  - one-shot init job; pulls the chat + embedding models (first run: several GB)
-#   backend        - FastAPI + LangChain RAG API; FAISS is embedded, data persists in `chatbot-data`
+#   backend  - FastAPI + LangChain RAG API. Gemini for chat, Pinecone for
+#              embeddings (hosted inference) + vector search.
+#              Uploads + the document manifest persist in `chatbot-data`.
 #
-# No separate vector DB service is needed — FAISS lives inside the backend (see README).
+# No local model server and no local vector DB are needed — both are managed
+# services (Google AI + Pinecone). See README for key setup.
 #
 # Common flows:
-#   Full local stack (default):   docker compose up --build
-#   OpenAI only (no Ollama):      PROVIDER=openai OPENAI_API_KEY=sk-... docker compose up --build backend --no-deps
-#   Fully offline fake mode:      PROVIDER=fake docker compose up --build backend --no-deps
-#   Wipe everything (volumes!):   docker compose down -v
+#   Start:                 docker compose up --build
+#   Offline smoke mode:    PROVIDER=fake docker compose up --build
+#   Wipe local data:       docker compose down -v
 #
 # Overridable via shell env or a repo-root .env (docker compose reads it automatically).
 
 name: rag-chatbot
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    volumes:
-      - ollama-data:/root/.ollama
-    expose:
-      - "11434"   # reachable only inside the compose network; add `ports:` if you want host access
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-    # NVIDIA GPU passthrough — requires nvidia container toolkit; uncomment:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
-  ollama-models:
-    image: ollama/ollama:latest
-    restart: "no"
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1}
-      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
-    entrypoint: ["/bin/sh", "-c"]
-    # Pulls are idempotent — existing layers are skipped on re-runs.
-    command:
-      - "echo \"Pulling $$OLLAMA_CHAT_MODEL and $$OLLAMA_EMBEDDING_MODEL...\" && ollama pull \"$$OLLAMA_CHAT_MODEL\" && ollama pull \"$$OLLAMA_EMBEDDING_MODEL\" && echo \"Models ready.\""
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     image: rag-chatbot-backend:latest
     restart: unless-stopped
-    depends_on:
-      ollama:
-        condition: service_healthy
-      ollama-models:
-        condition: service_completed_successfully
     environment:
-      PROVIDER: ${PROVIDER:-ollama}
-      # OpenAI (or OpenAI-compatible) — ignored unless PROVIDER=openai
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
-      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
-      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
-      # Mistral AI — ignored unless PROVIDER=mistral
-      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
-      MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
-      MISTRAL_CHAT_MODEL: ${MISTRAL_CHAT_MODEL:-mistral-small}
-      MISTRAL_EMBEDDING_MODEL: ${MISTRAL_EMBEDDING_MODEL:-mistral-embed}
-      # Ollama (used inside the compose network)
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1}
-      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
-      # Server
+      PROVIDER: ${PROVIDER:-gemini}
+
+      # --- Google Gemini (LLM) ---
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_BASE_URL: ${GOOGLE_BASE_URL:-}
+      GOOGLE_CHAT_MODEL: ${GOOGLE_CHAT_MODEL:-gemini-2.5-flash}
+
+      # --- Pinecone (embeddings + vector store) ---
+      PINECONE_API_KEY: ${PINECONE_API_KEY:-}
+      PINECONE_INDEX: ${PINECONE_INDEX:-}
+      PINECONE_HOST: ${PINECONE_HOST:-}
+      PINECONE_NAMESPACE: ${PINECONE_NAMESPACE:-}
+      PINECONE_EMBEDDING_MODEL: ${PINECONE_EMBEDDING_MODEL:-llama-text-embed-v2}
+
+      # --- Server ---
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
       CHUNK_SIZE: ${CHUNK_SIZE:-1000}
@@ -95,5 +53,4 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
 
 volumes:
-  ollama-data:   # pulled LLM + embedding model weights
-  chatbot-data:  # uploaded files + FAISS index + document manifest
+  chatbot-data:  # uploaded files + document manifest

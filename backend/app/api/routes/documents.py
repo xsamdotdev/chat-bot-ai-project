@@ -110,6 +110,10 @@ async def upload_document(
     except HTTPException:
         stored_path.unlink(missing_ok=True)
         raise
+    except RuntimeError as exc:
+        # Provider misconfiguration (missing API key, bad model name, unreachable store)
+        stored_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         stored_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"Failed to ingest document: {exc}") from exc
@@ -145,6 +149,8 @@ def delete_document(
         deleted = manager.delete_document(doc_id)
     except DocumentNotFoundError:
         raise HTTPException(status_code=404, detail=f"Document '{doc_id}' not found.") from None
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     # Best-effort removal of the stored upload as well.
     for candidate in settings.upload_dir.glob(f"{doc_id}_*"):

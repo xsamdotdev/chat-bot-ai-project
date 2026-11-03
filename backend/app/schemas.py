@@ -9,9 +9,11 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------- health
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
-    provider: str
+    provider: str            # gemini | fake
     chat_model: str
-    embedding_model: str
+    embedding_model: str     # Pinecone hosted embedding model
+    embedding_provider: str  # always "pinecone"
+    vector_store: str        # always "pinecone"
     documents_indexed: int
 
 
@@ -59,7 +61,7 @@ class Source(BaseModel):
     chunk_index: int | None = None
     page: int | None = None  # 0-based page number for PDFs, when available
     snippet: str
-    score: float | None = None  # L2 distance; lower is more similar
+    score: float | None = None  # Pinecone cosine similarity (higher = more similar)
 
 
 class ChatResponse(BaseModel):

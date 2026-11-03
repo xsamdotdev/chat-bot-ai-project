@@ -1,47 +1,57 @@
-"""Provider-aware embedding factory."""
+"""Embeddings via Pinecone's hosted inference API (`pc.inference.embed`).
+
+Pinecone hosts dense embedding models, so no separate embedding provider is
+needed: the same client that stores the vectors also generates them.
+
+The `input_type` parameter matters for these models:
+  - "passage" for documents being ingested
+  - "query"   for the search query
+"""
 
 from langchain_core.embeddings import Embeddings
 
 from app.config import Settings
+from app.services.pinecone_client import get_pinecone_client
+
+_EMBED_BATCH = 96  # Pinecone inference accepts batches of documents per call
 
 
-def get_embeddings(settings: Settings) -> Embeddings:
-    """Return the embeddings implementation for the configured provider."""
-    if settings.provider == "openai":
-        from langchain_openai import OpenAIEmbeddings
+class PineconeInferenceEmbeddings(Embeddings):
+    """LangChain `Embeddings` backed by Pinecone hosted inference."""
 
-        if not settings.openai_api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set. Add it to backend/.env "
-                "(or switch PROVIDER to 'ollama' or 'fake')."
+    def __init__(self, client, model: str):
+        self._client = client
+        self.model = model
+
+    def _embed(self, texts: list[str], input_type: str) -> list[list[float]]:
+        if not texts:
+            return []
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), _EMBED_BATCH):
+            batch = texts[start : start + _EMBED_BATCH]
+            response = self._client.inference.embed(
+                model=self.model,
+                inputs=batch,
+                parameters={"input_type": input_type},
             )
-        kwargs: dict = {"model": settings.openai_embedding_model, "api_key": settings.openai_api_key}
-        if settings.openai_base_url:
-            kwargs["base_url"] = settings.openai_base_url
-        return OpenAIEmbeddings(**kwargs)
+            vectors.extend([item.values for item in response])
+        return vectors
 
-    if settings.provider == "ollama":
-        from langchain_ollama import OllamaEmbeddings
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self._embed(list(texts), "passage")
 
-        return OllamaEmbeddings(model=settings.ollama_embedding_model, base_url=settings.ollama_base_url)
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed([text], "query")[0]
 
-    if settings.provider == "mistral":
-        from langchain_mistralai import MistralAIEmbeddings
 
-        if not settings.mistral_api_key:
-            raise RuntimeError(
-                "MISTRAL_API_KEY is not set. Add it to backend/.env "
-                "(or switch PROVIDER to 'openai', 'ollama' or 'fake')."
-            )
-        kwargs: dict = {"model": settings.mistral_embedding_model, "mistral_api_key": settings.mistral_api_key}
-        if settings.mistral_base_url:
-            kwargs["endpoint"] = settings.mistral_base_url
-        return MistralAIEmbeddings(**kwargs)
-
+def get_embeddings(settings: Settings, client=None) -> Embeddings:
+    """Return the embeddings implementation for the configured mode."""
     if settings.provider == "fake":
-        # Deterministic, offline embeddings for dev/smoke tests. NOT semantic.
         from langchain_core.embeddings import DeterministicFakeEmbedding
 
-        return DeterministicFakeEmbedding(size=384)
+        # 1024 dims matches the dense Pinecone embedding models, so fake vectors
+        # can be used against a mocked index in tests.
+        return DeterministicFakeEmbedding(size=1024)
 
-    raise RuntimeError(f"Unknown provider: {settings.provider!r}")
+    client = client or get_pinecone_client(settings)
+    return PineconeInferenceEmbeddings(client=client, model=settings.pinecone_embedding_model)

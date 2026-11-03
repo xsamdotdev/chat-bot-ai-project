@@ -20,5 +20,7 @@ def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
         provider=settings.provider,
         chat_model=settings.chat_model,
         embedding_model=settings.embedding_model,
+        embedding_provider="pinecone",
+        vector_store="pinecone",
         documents_indexed=indexed,
     )
