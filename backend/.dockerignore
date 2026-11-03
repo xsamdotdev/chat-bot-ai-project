@@ -1,0 +1,12 @@
+# Keep secrets and dev artifacts out of the image
+.env
+.venv/
+storage/
+tests/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+requirements-dev.txt
+Dockerfile
+.dockerignore
